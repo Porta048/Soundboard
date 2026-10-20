@@ -1,0 +1,35 @@
+# Build e dipendenze binarie locali
+*.exe
+*.dll
+*.pdb
+*.obj
+*.zip
+bin/
+obj/
+.vs/
+.qa-*/
+
+# Impostazioni e dati personali
+.env
+.env.*
+!.env.example
+*.user
+*.suo
+library.xml
+settings.xml
+cache/
+
+# Risorse storiche: pubblicare solo il logo originale
+/assets/*
+!/assets/soundboard-logo.ico
+!/assets/soundboard-logo.png
+
+# Evidenze e osservazioni locali dell'analisi
+/rea-*.json
+/soundpad-*.json
+/unitefx-static.json
+/ANALISI.md
+/BUGFIX-AUDIO.md
+/FUNZIONAMENTO-SOUNDPAD.md
+/extract-soundpad-resources.ps1
+/inspect-soundpad.mjs
