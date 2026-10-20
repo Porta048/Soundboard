@@ -42,6 +42,10 @@ internal sealed class SoundboardWindow : Form
     private SoundEntry playingSound;
     private AudioRoute outputRoute;
     private string microphoneDeviceName;
+    private bool usePhysicalMicrophone = true;
+    private string physicalEndpointId = "";
+    private readonly ToolStripMenuItem physicalMicrophoneMode = new ToolStripMenuItem("Usa microfono fisico (APO Soundboard)") { Checked = true, CheckOnClick = true };
+    private readonly ToolStripMenuItem physicalMicrophones = new ToolStripMenuItem("Microfono fisico");
     private readonly ToolStripMenuItem microphoneDevices = new ToolStripMenuItem("Dispositivo microfono virtuale");
     private readonly System.Collections.Generic.List<ToolStripMenuItem> routeCommands = new System.Collections.Generic.List<ToolStripMenuItem>();
     private Button speakerButton;
@@ -107,6 +111,11 @@ internal sealed class SoundboardWindow : Form
             playMenu.DropDownItems.Add(command);
         }
         playMenu.DropDownItems.Add(new ToolStripSeparator());
+        playMenu.DropDownItems.Add(physicalMicrophoneMode);
+        playMenu.DropDownItems.Add(physicalMicrophones);
+        playMenu.DropDownItems.Add(new ToolStripMenuItem("Configura microfono fisico...", null, SetupPhysicalMicrophone));
+        physicalMicrophoneMode.Click += SelectMicrophoneMode;
+        physicalMicrophones.DropDownOpening += RefreshPhysicalMicrophones;
         playMenu.DropDownItems.Add(microphoneDevices);
         playMenu.DropDownItems.Add(new ToolStripMenuItem("Collegamento del microfono virtuale...", null, ShowMicrophoneHelp));
         microphoneDevices.DropDownOpening += RefreshMicrophoneDevices;
@@ -392,10 +401,77 @@ internal sealed class SoundboardWindow : Form
 
     private void UpdateOutputRoute()
     {
+        physicalMicrophoneMode.Checked = usePhysicalMicrophone;
+        physicalMicrophones.Enabled = usePhysicalMicrophone;
+        microphoneDevices.Enabled = !usePhysicalMicrophone;
         foreach (var item in routeCommands) item.Checked = (AudioRoute)item.Tag == outputRoute;
         speakerButton.BackColor = outputRoute != AudioRoute.Microphone ? System.Drawing.Color.FromArgb(55, 55, 55) : BackColor;
         microphoneButton.BackColor = outputRoute != AudioRoute.Speakers ? System.Drawing.Color.FromArgb(55, 55, 55) : BackColor;
-        hints.SetToolTip(microphoneButton, "Riproduci solo nel microfono virtuale" + (string.IsNullOrEmpty(microphoneDeviceName) ? "" : ": " + microphoneDeviceName));
+        hints.SetToolTip(microphoneButton, usePhysicalMicrophone ? "Riproduci nel microfono fisico tramite APO Soundboard" : "Riproduci solo nel microfono virtuale" + (string.IsNullOrEmpty(microphoneDeviceName) ? "" : ": " + microphoneDeviceName));
+    }
+
+    private void SelectMicrophoneMode(object sender, EventArgs e)
+    {
+        StopPlayback(this, EventArgs.Empty);
+        usePhysicalMicrophone = physicalMicrophoneMode.Checked;
+        UpdateOutputRoute();
+        SaveAudioSettings();
+    }
+
+    private CaptureEndpoint SelectedPhysicalMicrophone()
+    {
+        var devices = CoreAudioDevices.RecordingDevices();
+        var device = string.IsNullOrEmpty(physicalEndpointId)
+            ? devices.FirstOrDefault(item => item.DefaultCommunications)
+            : devices.FirstOrDefault(item => string.Equals(item.Id, physicalEndpointId, StringComparison.OrdinalIgnoreCase));
+        if (device == null) throw new InvalidOperationException("Microfono fisico non disponibile. Selezionalo in Riproduci > Microfono fisico.");
+        return device;
+    }
+
+    private void RefreshPhysicalMicrophones(object sender, EventArgs e)
+    {
+        foreach (var item in physicalMicrophones.DropDownItems.Cast<ToolStripItem>().ToArray()) item.Dispose();
+        physicalMicrophones.DropDownItems.Add(new ToolStripMenuItem("Automatico (predefinito comunicazioni)", null, SelectPhysicalMicrophone) { Tag = "", Checked = string.IsNullOrEmpty(physicalEndpointId) });
+        try
+        {
+            foreach (var device in CoreAudioDevices.RecordingDevices())
+                physicalMicrophones.DropDownItems.Add(new ToolStripMenuItem(device.Name + (device.DefaultCommunications ? " (predefinito)" : ""), null, SelectPhysicalMicrophone) { Tag = device.Id, Checked = string.Equals(device.Id, physicalEndpointId, StringComparison.OrdinalIgnoreCase) });
+        }
+        catch (Exception error) { status.Text = "Microfoni non disponibili: " + error.Message; }
+    }
+
+    private void SelectPhysicalMicrophone(object sender, EventArgs e)
+    {
+        StopPlayback(this, EventArgs.Empty);
+        physicalEndpointId = (string)((ToolStripMenuItem)sender).Tag;
+        usePhysicalMicrophone = true;
+        UpdateOutputRoute();
+        SaveAudioSettings();
+        try { status.Text = "Microfono fisico: " + SelectedPhysicalMicrophone().Name; }
+        catch (Exception error) { status.Text = error.Message; }
+    }
+
+    private void SetupPhysicalMicrophone(object sender, EventArgs e)
+    {
+        try
+        {
+            var device = SelectedPhysicalMicrophone();
+            var directory = Path.GetDirectoryName(typeof(Program).Assembly.Location);
+            var installer = Path.Combine(directory, "native", "install-microphone.ps1");
+            if (!File.Exists(installer)) throw new FileNotFoundException("Componente nativo mancante. Esegui scripts\\build-native.ps1.", installer);
+            var answer = MessageBox.Show(this, "Microfono: " + device.Name + "\n\nL'installazione collega l'APO Soundboard a questo dispositivo e richiede i permessi di amministratore. Chiudi le chiamate prima di procedere. Al termine riapri Discord usando lo stesso microfono; potrebbe essere necessario riavviare Windows.\n\nProcedere con l'installazione?", "Configura microfono fisico", MessageBoxButtons.OKCancel, MessageBoxIcon.Information);
+            if (answer != DialogResult.OK) return;
+            StopPlayback(this, EventArgs.Empty);
+            string owner;
+            using (var identity = System.Security.Principal.WindowsIdentity.GetCurrent()) owner = identity.User.Value;
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo {
+                FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe"),
+                Arguments = "-NoProfile -ExecutionPolicy Bypass -File \"" + installer + "\" -EndpointId \"" + device.Id + "\" -OwnerSid \"" + owner + "\"",
+                UseShellExecute = true, Verb = "runas", WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden
+            });
+            status.Text = "Installazione richiesta per " + device.Name + ". Riapri Discord dopo il completamento.";
+        }
+        catch (Exception error) { MessageBox.Show(this, error.Message, "Configurazione microfono", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
 
     private void RefreshMicrophoneDevices(object sender, EventArgs e)
@@ -450,6 +526,9 @@ internal sealed class SoundboardWindow : Form
             if (int.TryParse((string)document.Root.Attribute("volume"), out level)) volume.Value = level;
             var deviceName = (string)document.Root.Attribute("microphoneDevice");
             if (deviceName != null) microphoneDeviceName = deviceName;
+            bool physical;
+            if (bool.TryParse((string)document.Root.Attribute("physicalMicrophone"), out physical)) usePhysicalMicrophone = physical;
+            physicalEndpointId = (string)document.Root.Attribute("physicalEndpoint") ?? "";
             AudioRoute route;
             if (Enum.TryParse((string)document.Root.Attribute("route"), out route) && Enum.IsDefined(typeof(AudioRoute), route)) outputRoute = route;
         }
@@ -461,7 +540,7 @@ internal sealed class SoundboardWindow : Form
         try
         {
             var path = Path.Combine(Path.GetDirectoryName(libraryPath), "settings.xml");
-            var document = new XDocument(new XElement("audio", new XAttribute("volume", volume.Value), new XAttribute("route", outputRoute), new XAttribute("microphoneDevice", microphoneDeviceName ?? "")));
+            var document = new XDocument(new XElement("audio", new XAttribute("volume", volume.Value), new XAttribute("route", outputRoute), new XAttribute("microphoneDevice", microphoneDeviceName ?? ""), new XAttribute("physicalMicrophone", usePhysicalMicrophone), new XAttribute("physicalEndpoint", physicalEndpointId)));
             SaveDocumentAtomic(document, path);
             audioSettingsDirty = false;
         }
@@ -665,13 +744,15 @@ internal sealed class SoundboardWindow : Form
         status.Text = "Caricamento: " + sound.Name;
         try
         {
-            var devices = AudioRouting.Resolve(outputRoute, microphoneDeviceName);
+            var physical = usePhysicalMicrophone && outputRoute != AudioRoute.Speakers ? SelectedPhysicalMicrophone() : null;
+            var devices = physical == null ? AudioRouting.Resolve(outputRoute, microphoneDeviceName)
+                : outputRoute == AudioRoute.Microphone ? new int[0] : AudioRouting.Resolve(AudioRoute.Speakers, null);
             player.Volume = volume.Value / 1000.0;
-            await player.OpenAsync(sound.Path, devices);
+            await player.OpenAsync(sound.Path, devices, physical == null ? null : physical.Id);
             if (request != playbackRequest || IsDisposed || Disposing) return;
             player.Play();
             PlaybackOpened(this, EventArgs.Empty);
-            status.Text = "In riproduzione: " + sound.Name + (outputRoute == AudioRoute.Microphone ? " | Solo microfono virtuale" : outputRoute == AudioRoute.Both ? " | Altoparlanti e microfono" : " | Altoparlanti");
+            status.Text = "In riproduzione: " + sound.Name + (physical != null ? " | " + physical.Name : outputRoute == AudioRoute.Microphone ? " | Solo microfono virtuale" : outputRoute == AudioRoute.Both ? " | Altoparlanti e microfono" : " | Altoparlanti");
             hints.SetToolTip(status, status.Text);
         }
         catch (OperationCanceledException) { }

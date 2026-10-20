@@ -1,4 +1,4 @@
-param([string]$ExecutablePath = "$PSScriptRoot\..\Soundboard.exe")
+param([string]$ExecutablePath = "$PSScriptRoot\..\bin\Soundboard.exe")
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
@@ -8,8 +8,10 @@ $testPath = Join-Path $workspacePath '.qa-import'
 if (-not ([IO.Path]::GetFullPath($testPath)).StartsWith($workspacePath + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Percorso test fuori dal progetto.' }
 if (Test-Path -LiteralPath $testPath) { throw 'La cartella .qa-import esiste gia: conservarla e usare un percorso pulito.' }
 [IO.Directory]::CreateDirectory($testPath) | Out-Null
-$sourceList = Join-Path $env:APPDATA 'Leppsoft\soundlist.spl'
-$sourceStats = Join-Path $env:APPDATA 'Leppsoft\stats.spl'
+$sourceList = Join-Path $testPath 'soundlist.spl'
+$sourceStats = Join-Path $testPath 'stats.spl'
+[IO.File]::WriteAllText($sourceList, '<Soundlist><Sound url="imported-missing.mp3" title="Suono di prova" duration="0:10" hash="fixture"/></Soundlist>')
+[IO.File]::WriteAllText($sourceStats, '<Stats><Sound hash="fixture" playCount="5"/></Stats>')
 $beforeList = (Get-FileHash -LiteralPath $sourceList).Hash
 $beforeStats = (Get-FileHash -LiteralPath $sourceStats).Hash
 $assembly = [Reflection.Assembly]::LoadFile([IO.Path]::GetFullPath($ExecutablePath))
@@ -23,13 +25,15 @@ try {
     $windowType.GetField('libraryPath', $flags).SetValue($form, $storagePath)
     $sounds = $windowType.GetField('sounds', $flags).GetValue($form)
     $sounds.Clear()
+    $windowType.GetField('outputRoute', $flags).SetValue($form, [Enum]::Parse($assembly.GetType('AudioRoute'), 'Speakers'))
+    $windowType.GetMethod('UpdateOutputRoute', $flags).Invoke($form, @()) | Out-Null
     $form.Show()
     [Windows.Forms.Application]::DoEvents()
     $import = $windowType.GetMethod('ImportSoundpadFile', $flags)
     $added = $import.Invoke($form, @([string]$sourceList))
-    if ($added -ne 1 -or $sounds.Count -ne 1) { throw 'Importazione della lista reale non riuscita.' }
+    if ($added -ne 1 -or $sounds.Count -ne 1) { throw 'Importazione della lista di prova non riuscita.' }
     $sound = $sounds[0]
-    if ($sound.Name -ne 'dictator-mbappe-meme' -or $sound.Duration -ne '0:10' -or $sound.PlayCount -ne 5) { throw 'Titolo, durata o statistiche importati non corretti.' }
+    if ($sound.Name -ne 'Suono di prova' -or $sound.Duration -ne '0:10' -or $sound.PlayCount -ne 5) { throw 'Titolo, durata o statistiche importati non corretti.' }
     if ($import.Invoke($form, @([string]$sourceList)) -ne 0 -or $sounds.Count -ne 1) { throw 'La seconda importazione ha duplicato il suono.' }
     $missing = [Activator]::CreateInstance($assembly.GetType('SoundEntry'), $true)
     $missing.Path = Join-Path $testPath 'missing.mp3'
@@ -88,8 +92,8 @@ try {
     $restored.Clear()
     $windowType.GetMethod('LoadLibrary', $flags).Invoke($reloaded, @())
     if ($restored.Count -ne 3 -or $restored[0].PlayCount -ne 5 -or $restored[0].Duration -ne '0:10' -or $restored[2].PlayCount -ne 1) { throw 'Metadati non conservati al riavvio.' }
-    if ((Get-FileHash -LiteralPath $sourceList).Hash -ne $beforeList -or (Get-FileHash -LiteralPath $sourceStats).Hash -ne $beforeStats) { throw 'I file originali Soundpad sono cambiati durante il test.' }
-    'PASS: lista reale, statistiche, duplicati, file mancante, percorsi relativi, URL esclusi, DTD, audio silenzioso, seek e persistenza.'
+    if ((Get-FileHash -LiteralPath $sourceList).Hash -ne $beforeList -or (Get-FileHash -LiteralPath $sourceStats).Hash -ne $beforeStats) { throw 'I file sorgenti della fixture sono cambiati durante il test.' }
+    'PASS: lista di prova, statistiche, duplicati, file mancante, percorsi relativi, URL esclusi, DTD, audio silenzioso, seek e persistenza.'
 }
 finally {
     if (-not $form.IsDisposed) { $form.Close() }

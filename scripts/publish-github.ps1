@@ -5,7 +5,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-Set-Location -LiteralPath $PSScriptRoot
+Set-Location -LiteralPath (Join-Path $PSScriptRoot '..')
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw 'Git non e installato.' }
 
 if (-not (Test-Path -LiteralPath '.git')) {

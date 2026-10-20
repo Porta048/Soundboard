@@ -137,6 +137,7 @@ internal static class AudioRegression
             sounds.Add(new SoundEntry { Path = Path.Combine(directory, "silence.wav") });
             form.Show();
             Application.DoEvents();
+            typeof(SoundboardWindow).GetField("usePhysicalMicrophone", Fields).SetValue(form, false);
             var microphone = (Button)typeof(SoundboardWindow).GetField("microphoneButton", Fields).GetValue(form);
             Check(microphone.Enabled, "Pulsante microfono selezionabile");
             typeof(SoundboardWindow).GetField("microphoneDeviceName", Fields).SetValue(form, "Dispositivo inesistente per test");

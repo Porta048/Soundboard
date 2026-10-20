@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
-$assetPath = Join-Path $PSScriptRoot 'assets'
+$assetPath = Join-Path $PSScriptRoot '..\assets'
 [IO.Directory]::CreateDirectory($assetPath) | Out-Null
 $iconStream = New-Object IO.MemoryStream
 $writer = New-Object IO.BinaryWriter($iconStream)

@@ -196,6 +196,7 @@ internal sealed class PcmAudioPlayer : IDisposable
 {
     private readonly object gate = new object();
     private readonly List<PcmOutput> outputs = new List<PcmOutput>();
+    private ApoPcmOutput microphoneOutput;
     private CancellationTokenSource opening;
     private string decodedPath;
     private float gain = 0.8f;
@@ -225,22 +226,23 @@ internal sealed class PcmAudioPlayer : IDisposable
             {
                 gain = (float)Math.Max(0, Math.Min(1, value));
                 foreach (var output in outputs) output.Volume = gain;
+                if (microphoneOutput != null) microphoneOutput.Volume = gain;
             }
         }
     }
 
     public TimeSpan Position
     {
-        get { lock (gate) return outputs.Count == 0 ? TimeSpan.Zero : outputs[0].Position; }
-        set { lock (gate) foreach (var output in outputs) output.Seek(value); }
+        get { lock (gate) return microphoneOutput != null ? microphoneOutput.Position : outputs.Count == 0 ? TimeSpan.Zero : outputs[0].Position; }
+        set { lock (gate) { foreach (var output in outputs) output.Seek(value); if (microphoneOutput != null) microphoneOutput.Seek(value); } }
     }
 
-    public async Task OpenAsync(string path, int[] devices)
+    public async Task OpenAsync(string path, int[] devices, string microphoneEndpoint = null)
     {
         Close();
         if (!File.Exists(path)) throw new FileNotFoundException("File audio non trovato.", path);
         if (!File.Exists(DecoderPath)) throw new FileNotFoundException("Decoder audio mancante: conserva la cartella vendor accanto a Soundboard.exe.", DecoderPath);
-        if (devices.Length == 0) throw new InvalidOperationException("Nessuna uscita audio selezionata.");
+        if (devices.Length == 0 && microphoneEndpoint == null) throw new InvalidOperationException("Nessuna uscita audio selezionata.");
         var request = Session;
         var cancellation = new CancellationTokenSource();
         opening = cancellation;
@@ -260,6 +262,11 @@ internal sealed class PcmAudioPlayer : IDisposable
                 Duration = TimeSpan.FromSeconds(new FileInfo(decodedPath).Length / 192000.0);
                 outputSession = request;
                 ended = false;
+                if (microphoneEndpoint != null)
+                {
+                    microphoneOutput = new ApoPcmOutput(decodedPath, ApoPcmOutput.ChannelName(microphoneEndpoint), CacheDirectory) { Volume = gain };
+                    microphoneOutput.Ended += OutputEnded;
+                }
                 foreach (var device in devices.Distinct())
                 {
                     var output = new PcmOutput(decodedPath, device) { Volume = gain };
@@ -334,8 +341,8 @@ internal sealed class PcmAudioPlayer : IDisposable
         long current;
         lock (gate)
         {
-            if (ended || !outputs.Contains((PcmOutput)sender)) return;
-            if (e.Error == null && outputs.Any(output => !output.Finished)) return;
+            if (ended || (sender != microphoneOutput && !outputs.Cast<object>().Contains(sender))) return;
+            if (e.Error == null && (outputs.Any(output => !output.Finished) || (microphoneOutput != null && !microphoneOutput.Finished))) return;
             ended = true;
             current = outputSession;
         }
@@ -343,12 +350,13 @@ internal sealed class PcmAudioPlayer : IDisposable
         if (stopped != null) stopped(this, new AudioPlaybackEventArgs { Error = e.Error, Session = current });
     }
 
-    public void Play() { lock (gate) foreach (var output in outputs) output.Play(); }
-    public void Pause() { lock (gate) foreach (var output in outputs) output.Pause(); }
+    public void Play() { lock (gate) { if (microphoneOutput != null) microphoneOutput.Play(); foreach (var output in outputs) output.Play(); } }
+    public void Pause() { lock (gate) { if (microphoneOutput != null) microphoneOutput.Pause(); foreach (var output in outputs) output.Pause(); } }
 
     public void Close()
     {
         PcmOutput[] previous;
+        ApoPcmOutput previousMicrophone;
         string path;
         lock (gate)
         {
@@ -356,6 +364,9 @@ internal sealed class PcmAudioPlayer : IDisposable
             if (opening != null) opening.Cancel();
             previous = outputs.ToArray();
             outputs.Clear();
+            previousMicrophone = microphoneOutput;
+            microphoneOutput = null;
+            if (previousMicrophone != null) previousMicrophone.Ended -= OutputEnded;
             path = decodedPath;
             decodedPath = null;
             Source = null;
@@ -363,6 +374,7 @@ internal sealed class PcmAudioPlayer : IDisposable
             foreach (var output in previous) output.Ended -= OutputEnded;
         }
         foreach (var output in previous) output.Dispose();
+        if (previousMicrophone != null) previousMicrophone.Dispose();
         if (path != null) DeleteDecodedFile(path);
     }
 

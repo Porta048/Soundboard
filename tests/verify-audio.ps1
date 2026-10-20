@@ -16,7 +16,7 @@ try {
     & $decoder -nostdin -hide_banner -loglevel error -f lavfi -i 'color=c=black:s=16x16:r=10:d=1' -c:v mpeg4 -an (Join-Path $testPath 'video-only.mp4')
     if ($LASTEXITCODE -ne 0) { throw 'Generazione fixture senza audio non riuscita.' }
     $executable = Join-Path $testPath 'AudioRegression.exe'
-    & $compiler /nologo /target:exe /main:AudioRegression "/out:$executable" /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Xml.Linq.dll "/resource:$workspacePath\assets\soundboard-logo.ico,Soundboard.main.ico" "$workspacePath\Soundboard.cs" "$workspacePath\SoundboardTheme.cs" "$workspacePath\NativeAudio.cs" "$workspacePath\PcmAudioPlayer.cs" "$workspacePath\AudioRouting.cs" "$PSScriptRoot\AudioRegression.cs"
+    & $compiler /nologo /platform:x64 /target:exe /main:AudioRegression "/out:$executable" /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Xml.Linq.dll "/resource:$workspacePath\assets\soundboard-logo.ico,Soundboard.main.ico" "$workspacePath\src\Soundboard.cs" "$workspacePath\src\SoundboardTheme.cs" "$workspacePath\src\NativeAudio.cs" "$workspacePath\src\PcmAudioPlayer.cs" "$workspacePath\src\AudioRouting.cs" "$workspacePath\src\CoreAudioDevices.cs" "$workspacePath\src\ApoPcmOutput.cs" "$PSScriptRoot\AudioRegression.cs"
     if ($LASTEXITCODE -ne 0) { throw 'Compilazione test audio non riuscita.' }
     & $executable $testPath $decoder $ActualFile
     if ($LASTEXITCODE -ne 0) { throw 'Test audio non riusciti.' }

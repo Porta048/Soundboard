@@ -1,0 +1,4 @@
+LIBRARY SoundboardApo
+EXPORTS
+    DllGetClassObject PRIVATE
+    DllCanUnloadNow PRIVATE
