@@ -34,6 +34,7 @@ internal sealed class SoundboardWindow : Form
     private readonly AudioSlider volume = new AudioSlider();
     private readonly ToolTip hints = new ToolTip();
     private readonly Timer playbackTimer = new Timer();
+    private readonly Timer animationTimer = new Timer { Interval = 25 };
     private readonly System.Collections.Generic.List<System.Drawing.Image> resourceImages = new System.Collections.Generic.List<System.Drawing.Image>();
     private readonly string libraryPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Soundboard", "library.xml");
     private bool paused;
@@ -54,6 +55,9 @@ internal sealed class SoundboardWindow : Form
     private long playbackRequest;
     private bool audioSettingsDirty;
     private DateTime saveAudioAfter;
+    private SoundEntry flashSound;
+    private float flash;
+    private readonly System.Collections.Generic.List<FileSystemWatcher> watchers = new System.Collections.Generic.List<FileSystemWatcher>();
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool RegisterHotKey(IntPtr window, int id, uint modifiers, uint key);
@@ -213,7 +217,7 @@ internal sealed class SoundboardWindow : Form
         grid.ColumnHeadersHeight = 24;
         grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
         grid.ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle { BackColor = System.Drawing.Color.FromArgb(40, 40, 40), ForeColor = ForeColor, Font = Font, Padding = new Padding(4, 0, 0, 0), SelectionBackColor = System.Drawing.Color.FromArgb(40, 40, 40) };
-        grid.DefaultCellStyle = new DataGridViewCellStyle { BackColor = grid.BackgroundColor, ForeColor = ForeColor, SelectionBackColor = System.Drawing.Color.FromArgb(50, 50, 50), SelectionForeColor = ForeColor, Padding = new Padding(4, 0, 0, 0) };
+        grid.DefaultCellStyle = new DataGridViewCellStyle { BackColor = grid.BackgroundColor, ForeColor = ForeColor, SelectionBackColor = System.Drawing.Color.FromArgb(4, 101, 182), SelectionForeColor = System.Drawing.Color.White, Padding = new Padding(4, 0, 0, 0) };
         grid.RowTemplate.Height = 23;
         grid.AllowUserToResizeRows = false;
         grid.AutoGenerateColumns = false;
@@ -289,11 +293,15 @@ internal sealed class SoundboardWindow : Form
         volume.ValueChanged += ChangeVolume;
         seek.ValueChanged += SeekPlayback;
         player.PlaybackStopped += PlaybackEnded;
-        playbackTimer.Interval = 250;
+        playbackTimer.Interval = 50;
         playbackTimer.Tick += UpdatePlaybackPosition;
         playbackTimer.Start();
+        animationTimer.Tick += AnimateFrame;
+        Opacity = 0;
+        Shown += StartAnimations;
         player.Volume = 0.8;
         LoadLibrary();
+        RefreshFileWatchers();
         LoadAudioSettings();
         RefreshHotkeys();
         UpdateLibraryAppearance();
@@ -357,8 +365,45 @@ internal sealed class SoundboardWindow : Form
     private void ToggleCategories(object sender, EventArgs e)
     {
         var item = (ToolStripMenuItem)sender;
-        content.Controls[0].Visible = item.Checked;
+        content.GetControlFromPosition(0, 0).Visible = item.Checked;
         content.ColumnStyles[0].Width = item.Checked ? 182 : 0;
+    }
+
+    private void StartAnimations(object sender, EventArgs e)
+    {
+        animationTimer.Start();
+    }
+
+    private void AnimateFrame(object sender, EventArgs e)
+    {
+        if (Opacity < 1) Opacity = Math.Min(1, Opacity + 0.08);
+        if (flash > 0)
+        {
+            flash = Math.Max(0, flash - 0.05f);
+            PaintFlash();
+        }
+        if (Opacity >= 1 && flash <= 0) animationTimer.Stop();
+    }
+
+    private void FlashRow(SoundEntry sound)
+    {
+        flash = 0;
+        PaintFlash();
+        flashSound = sound;
+        flash = 1;
+        animationTimer.Start();
+    }
+
+    private void PaintFlash()
+    {
+        var index = flashSound == null ? -1 : sounds.IndexOf(flashSound);
+        if (index < 0) return;
+        var accent = System.Drawing.Color.FromArgb(4, 101, 182);
+        var background = grid.BackgroundColor;
+        var mix = flash * 0.6f;
+        grid.Rows[index].DefaultCellStyle.BackColor = flash > 0
+            ? System.Drawing.Color.FromArgb((int)(background.R + (accent.R - background.R) * mix), (int)(background.G + (accent.G - background.G) * mix), (int)(background.B + (accent.B - background.B) * mix))
+            : System.Drawing.Color.Empty;
     }
 
     private void ShowInformation(object sender, EventArgs e)
@@ -607,6 +652,7 @@ internal sealed class SoundboardWindow : Form
         }
         RefreshHotkeys();
         SaveLibrary();
+        RefreshFileWatchers();
     }
 
     private void PlaySelected(object sender, EventArgs e)
@@ -668,6 +714,7 @@ internal sealed class SoundboardWindow : Form
         }
         foreach (var sound in imported) sounds.Add(sound);
         RefreshHotkeys();
+        RefreshFileWatchers();
         UpdateLibraryAppearance();
         if (SaveLibrary())
         {
@@ -707,6 +754,7 @@ internal sealed class SoundboardWindow : Form
             selected.Duration = null;
         }
         sounds.ResetItem(sounds.IndexOf(selected));
+        RefreshFileWatchers();
         if (SaveLibrary()) status.Text = "File ricollegato: " + selected.Name;
     }
 
@@ -754,6 +802,7 @@ internal sealed class SoundboardWindow : Form
             PlaybackOpened(this, EventArgs.Empty);
             status.Text = "In riproduzione: " + sound.Name + (physical != null ? " | " + physical.Name : outputRoute == AudioRoute.Microphone ? " | Solo microfono virtuale" : outputRoute == AudioRoute.Both ? " | Altoparlanti e microfono" : " | Altoparlanti");
             hints.SetToolTip(status, status.Text);
+            FlashRow(sound);
         }
         catch (OperationCanceledException) { }
         catch (Exception error)
@@ -796,9 +845,43 @@ internal sealed class SoundboardWindow : Form
     {
         var selected = grid.CurrentRow == null ? null : grid.CurrentRow.DataBoundItem as SoundEntry;
         if (selected == null) return;
-        sounds.Remove(selected);
+        RemoveSound(selected);
+    }
+
+    private void RemoveSound(SoundEntry sound)
+    {
+        if (playingSound == sound) StopPlayback(this, EventArgs.Empty);
+        sounds.Remove(sound);
         RefreshHotkeys();
         SaveLibrary();
+        RefreshFileWatchers();
+    }
+
+    private void RefreshFileWatchers()
+    {
+        foreach (var watcher in watchers) watcher.Dispose();
+        watchers.Clear();
+        foreach (var directory in sounds.Select(sound => Path.GetDirectoryName(sound.Path)).Where(Directory.Exists).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var watcher = new FileSystemWatcher(directory) { NotifyFilter = NotifyFilters.FileName, EnableRaisingEvents = true };
+            watcher.Deleted += FileDeleted;
+            watchers.Add(watcher);
+        }
+    }
+
+    private void FileDeleted(object sender, FileSystemEventArgs e)
+    {
+        if (IsDisposed || Disposing || !IsHandleCreated) return;
+        try { BeginInvoke(new Action<string>(RemoveDeletedSound), e.FullPath); }
+        catch (InvalidOperationException) { }
+    }
+
+    private void RemoveDeletedSound(string path)
+    {
+        var sound = sounds.FirstOrDefault(item => string.Equals(item.Path, path, StringComparison.OrdinalIgnoreCase));
+        if (sound == null || File.Exists(path)) return;
+        RemoveSound(sound);
+        status.Text = "File eliminato, suono rimosso dalla libreria: " + sound.Name;
     }
 
     private void RefreshHotkeys()
@@ -918,6 +1001,9 @@ internal sealed class SoundboardWindow : Form
         if (audioSettingsDirty) SaveAudioSettings();
         playbackTimer.Stop();
         playbackTimer.Dispose();
+        animationTimer.Stop();
+        animationTimer.Dispose();
+        foreach (var watcher in watchers) watcher.Dispose();
         hints.Dispose();
         foreach (var id in Enumerable.Range(1, 12)) UnregisterHotKey(Handle, id);
         player.Dispose();
