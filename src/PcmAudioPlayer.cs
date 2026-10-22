@@ -46,7 +46,8 @@ internal sealed class PcmOutput : IDisposable
             var format = new NativeAudio.Format { Tag = 1, Channels = 2, SampleRate = 48000, BytesPerSecond = 192000, BlockAlign = 4, Bits = 16 };
             NativeAudio.Check(NativeAudio.waveOutOpen(out handle, device, ref format, IntPtr.Zero, IntPtr.Zero, 0), "Apertura uscita audio");
             NativeAudio.Check(NativeAudio.waveOutPause(handle), "Pausa uscita audio");
-            foreach (var index in Enumerable.Range(0, 3))
+            // 6 buffer da 40 ms: margine contro i ritardi dello scheduler sotto carico
+            foreach (var index in Enumerable.Range(0, 6))
             {
                 var data = Marshal.AllocHGlobal(samples.Length);
                 var header = Marshal.AllocHGlobal((int)headerSize);
