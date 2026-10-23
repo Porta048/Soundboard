@@ -1,7 +1,7 @@
 param(
     [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$')]
     [string]$RepositoryName = 'Soundboard',
-    [switch]$Public
+    [switch]$Private
 )
 
 $ErrorActionPreference = 'Stop'
@@ -60,13 +60,13 @@ try {
         if ($null -eq $_.Exception.Response -or [int]$_.Exception.Response.StatusCode -ne 404) { throw 'Impossibile verificare il repository GitHub. Controllare connessione e autorizzazioni.' }
     }
     if ($null -eq $repository) {
-        $body = @{ name = $RepositoryName; private = -not $Public.IsPresent; description = 'Windows soundboard in C# and Windows Forms'; auto_init = $false } | ConvertTo-Json
+        $body = @{ name = $RepositoryName; private = $Private.IsPresent; description = 'Windows soundboard in C# and Windows Forms'; auto_init = $false } | ConvertTo-Json
         try {
             $repository = Invoke-RestMethod -Method Post -Uri 'https://api.github.com/user/repos' -Headers $headers -ContentType 'application/json' -Body $body
         }
         catch { throw 'Creazione GitHub non riuscita. Verificare che la credenziale possa creare repository e che il nome sia disponibile.' }
     }
-    elseif ([bool]$repository.private -ne (-not $Public.IsPresent)) { throw 'Il repository esiste con una visibilita diversa da quella richiesta. Nessun push eseguito.' }
+    elseif ([bool]$repository.private -ne $Private.IsPresent) { throw 'Il repository esiste con una visibilita diversa da quella richiesta. Nessun push eseguito.' }
 
     if ([string]::IsNullOrWhiteSpace($existingRemote)) {
         git remote add origin $remoteUrl
