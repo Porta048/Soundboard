@@ -8,7 +8,7 @@ if (-not (Test-Path -LiteralPath "$workspacePath\vendor\ffmpeg.exe")) { throw 'M
 & (Join-Path $PSScriptRoot 'build-native.ps1')
 [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($OutputPath)) | Out-Null
 $resources = @("/resource:$workspacePath\assets\soundboard-logo.ico,Soundboard.main.ico")
-& $compilerPath /nologo /platform:x64 /target:winexe /out:"$OutputPath" /win32icon:"$workspacePath\assets\soundboard-logo.ico" $resources /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Xml.Linq.dll "$workspacePath\src\Soundboard.cs" "$workspacePath\src\SoundboardTheme.cs" "$workspacePath\src\NativeAudio.cs" "$workspacePath\src\PcmAudioPlayer.cs" "$workspacePath\src\AudioRouting.cs" "$workspacePath\src\CoreAudioDevices.cs" "$workspacePath\src\ApoPcmOutput.cs"
+& $compilerPath /nologo /platform:x64 /target:winexe /out:"$OutputPath" /win32icon:"$workspacePath\assets\soundboard-logo.ico" $resources /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Xml.Linq.dll "$workspacePath\src\Soundboard.cs" "$workspacePath\src\SoundboardTheme.cs" "$workspacePath\src\NativeAudio.cs" "$workspacePath\src\PcmAudioPlayer.cs" "$workspacePath\src\AudioRouting.cs" "$workspacePath\src\CoreAudioDevices.cs" "$workspacePath\src\ApoPcmOutput.cs" "$workspacePath\src\MicrophonePassthrough.cs"
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione non riuscita.' }
 $runtimeDirectory = [IO.Path]::GetDirectoryName($OutputPath)
 if (-not [string]::Equals($runtimeDirectory, "$workspacePath\bin", [StringComparison]::OrdinalIgnoreCase)) {

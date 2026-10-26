@@ -48,6 +48,8 @@ internal sealed class SoundboardWindow : Form
     private readonly ToolStripMenuItem physicalMicrophoneMode = new ToolStripMenuItem("Usa microfono fisico (APO Soundboard)") { Checked = true, CheckOnClick = true };
     private readonly ToolStripMenuItem physicalMicrophones = new ToolStripMenuItem("Microfono fisico");
     private readonly ToolStripMenuItem microphoneDevices = new ToolStripMenuItem("Dispositivo microfono virtuale");
+    private readonly ToolStripMenuItem liveMicrophone = new ToolStripMenuItem("Invia il mio microfono al microfono virtuale") { CheckOnClick = true };
+    private MicrophonePassthrough passthrough;
     private readonly System.Collections.Generic.List<ToolStripMenuItem> routeCommands = new System.Collections.Generic.List<ToolStripMenuItem>();
     private Button speakerButton;
     private Button microphoneButton;
@@ -123,6 +125,8 @@ internal sealed class SoundboardWindow : Form
         playMenu.DropDownItems.Add(microphoneDevices);
         playMenu.DropDownItems.Add(new ToolStripMenuItem("Collegamento del microfono virtuale...", null, ShowMicrophoneHelp));
         microphoneDevices.DropDownOpening += RefreshMicrophoneDevices;
+        playMenu.DropDownItems.Add(liveMicrophone);
+        liveMicrophone.Click += ToggleLiveMicrophone;
         var windowMenu = new ToolStripMenuItem("Finestra");
         windowMenu.DropDownItems.Add(new ToolStripMenuItem("Categorie", null, ToggleCategories) { Checked = true, CheckOnClick = true });
         var helpMenu = new ToolStripMenuItem("Guida");
@@ -543,6 +547,60 @@ internal sealed class SoundboardWindow : Form
         UpdateOutputRoute();
         SaveAudioSettings();
         status.Text = "Microfono virtuale: " + microphoneDeviceName;
+        if (liveMicrophone.Checked) StartLiveMicrophone();
+    }
+
+    private void ToggleLiveMicrophone(object sender, EventArgs e)
+    {
+        if (liveMicrophone.Checked) StartLiveMicrophone();
+        else StopLiveMicrophone();
+    }
+
+    private void StartLiveMicrophone()
+    {
+        StopLiveMicrophone();
+        try
+        {
+            var devices = AudioRouting.VirtualDevices();
+            var device = devices.FirstOrDefault(item => item.Name == microphoneDeviceName) ?? devices.FirstOrDefault();
+            if (device == null) throw new InvalidOperationException("Nessun ingresso virtuale disponibile. Seleziona un dispositivo in Riproduci > Dispositivo microfono virtuale.");
+            passthrough = new MicrophonePassthrough(device.Number);
+            passthrough.Stopped += LiveMicrophoneStopped;
+            passthrough.Start();
+            status.Text = "Microfono in diretta verso: " + device.Name;
+        }
+        catch (Exception error)
+        {
+            liveMicrophone.Checked = false;
+            StopLiveMicrophone();
+            MessageBox.Show(this, error.Message, "Microfono in diretta", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private void StopLiveMicrophone()
+    {
+        var previous = passthrough;
+        passthrough = null;
+        if (previous == null) return;
+        previous.Stopped -= LiveMicrophoneStopped;
+        previous.Dispose();
+    }
+
+    private void LiveMicrophoneStopped(object sender, EventArgs e)
+    {
+        var stopped = (MicrophonePassthrough)sender;
+        var failed = stopped.Failure;
+        if (failed == null) return;
+        try { BeginInvoke(new Action(() => ReportLiveMicrophoneStopped(stopped, failed))); }
+        catch (InvalidOperationException) { }
+    }
+
+    private void ReportLiveMicrophoneStopped(MicrophonePassthrough stopped, Exception failed)
+    {
+        if (passthrough != stopped) return;
+        liveMicrophone.Checked = false;
+        StopLiveMicrophone();
+        status.Text = "Microfono in diretta interrotto: " + failed.Message;
     }
 
     private void ShowMicrophoneHelp(object sender, EventArgs e)
@@ -998,6 +1056,7 @@ internal sealed class SoundboardWindow : Form
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
         playbackRequest += 1;
+        StopLiveMicrophone();
         if (audioSettingsDirty) SaveAudioSettings();
         playbackTimer.Stop();
         playbackTimer.Dispose();

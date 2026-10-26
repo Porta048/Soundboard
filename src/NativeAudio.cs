@@ -100,6 +100,20 @@ internal static class NativeAudio
     [DllImport("winmm.dll")]
     internal static extern uint waveOutGetPosition(IntPtr handle, ref Time position, uint size);
     [DllImport("winmm.dll")]
+    internal static extern uint waveInOpen(out IntPtr handle, uint device, ref Format format, IntPtr callback, IntPtr instance, uint flags);
+    [DllImport("winmm.dll")]
+    internal static extern uint waveInPrepareHeader(IntPtr handle, IntPtr header, uint size);
+    [DllImport("winmm.dll")]
+    internal static extern uint waveInUnprepareHeader(IntPtr handle, IntPtr header, uint size);
+    [DllImport("winmm.dll")]
+    internal static extern uint waveInAddBuffer(IntPtr handle, IntPtr header, uint size);
+    [DllImport("winmm.dll")]
+    internal static extern uint waveInStart(IntPtr handle);
+    [DllImport("winmm.dll")]
+    internal static extern uint waveInReset(IntPtr handle);
+    [DllImport("winmm.dll")]
+    internal static extern uint waveInClose(IntPtr handle);
+    [DllImport("winmm.dll")]
     private static extern uint waveOutMessage(IntPtr device, uint message, out int preferred, out uint status);
     [DllImport("winmm.dll", CharSet = CharSet.Unicode)]
     private static extern uint waveOutGetErrorTextW(uint error, StringBuilder text, uint length);
