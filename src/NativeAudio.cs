@@ -151,6 +151,15 @@ internal static class NativeAudio
         return devices.ToArray();
     }
 
+    // I nomi di winmm sono troncati: il nome completo di CoreAudio puo' iniziare con quello indicato da waveIn.
+    public static int RecordingDeviceNumber(string endpointName)
+    {
+        var names = RecordingDevices();
+        var index = Array.FindIndex(names, name => string.Equals(name, endpointName, StringComparison.OrdinalIgnoreCase));
+        if (index < 0) index = Array.FindIndex(names, name => name.Length > 0 && endpointName.StartsWith(name, StringComparison.OrdinalIgnoreCase));
+        return index;
+    }
+
     internal static void Check(uint result, string operation)
     {
         if (result == 0) return;

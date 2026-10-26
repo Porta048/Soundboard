@@ -564,10 +564,13 @@ internal sealed class SoundboardWindow : Form
             var devices = AudioRouting.VirtualDevices();
             var device = devices.FirstOrDefault(item => item.Name == microphoneDeviceName) ?? devices.FirstOrDefault();
             if (device == null) throw new InvalidOperationException("Nessun ingresso virtuale disponibile. Seleziona un dispositivo in Riproduci > Dispositivo microfono virtuale.");
-            passthrough = new MicrophonePassthrough(device.Number);
+            var microphone = SelectedPhysicalMicrophone();
+            var inputNumber = NativeAudio.RecordingDeviceNumber(microphone.Name);
+            if (inputNumber < 0) throw new InvalidOperationException("Il microfono " + microphone.Name + " non e' disponibile per la registrazione. Selezionalo in Riproduci > Microfono fisico.");
+            passthrough = new MicrophonePassthrough(inputNumber, device.Number);
             passthrough.Stopped += LiveMicrophoneStopped;
             passthrough.Start();
-            status.Text = "Microfono in diretta verso: " + device.Name;
+            status.Text = "Microfono in diretta: " + microphone.Name + " -> " + device.Name;
         }
         catch (Exception error)
         {

@@ -12,6 +12,7 @@ internal sealed class MicrophonePassthrough : IDisposable
     private const uint WhdrInQueue = 16;
 
     private readonly object gate = new object();
+    private readonly int inputDevice;
     private readonly int outputDevice;
     private readonly uint headerSize = (uint)Marshal.SizeOf(typeof(NativeAudio.Header));
     private readonly int flagsOffset = (int)Marshal.OffsetOf(typeof(NativeAudio.Header), "Flags");
@@ -29,8 +30,9 @@ internal sealed class MicrophonePassthrough : IDisposable
     public event EventHandler<EventArgs> Stopped;
     public Exception Failure { get { lock (gate) return failure; } }
 
-    public MicrophonePassthrough(int outputDevice)
+    public MicrophonePassthrough(int inputDevice, int outputDevice)
     {
+        this.inputDevice = inputDevice;
         this.outputDevice = outputDevice;
     }
 
@@ -39,8 +41,7 @@ internal sealed class MicrophonePassthrough : IDisposable
         var format = new NativeAudio.Format { Tag = 1, Channels = 2, SampleRate = 48000, BytesPerSecond = 192000, BlockAlign = 4, Bits = 16 };
         try
         {
-            // WAVE_MAPPER: microfono predefinito di Windows per la registrazione
-            NativeAudio.Check(NativeAudio.waveInOpen(out inputHandle, uint.MaxValue, ref format, IntPtr.Zero, IntPtr.Zero, 0), "Apertura microfono");
+            NativeAudio.Check(NativeAudio.waveInOpen(out inputHandle, (uint)inputDevice, ref format, IntPtr.Zero, IntPtr.Zero, 0), "Apertura microfono");
             NativeAudio.Check(NativeAudio.waveOutOpen(out outputHandle, outputDevice, ref format, IntPtr.Zero, IntPtr.Zero, 0), "Apertura uscita virtuale");
             for (var index = 0; index < BufferCount; index++)
             {
