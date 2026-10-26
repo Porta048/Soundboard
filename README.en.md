@@ -64,7 +64,7 @@ With Discord's mic test you should hear both your voice and the file being playe
 
 ## Physical microphone through an APO (experimental)
 
-The project also contains a path without Voicemeeter: a native APO (`native/`) that adds the file to the physical microphone stream. On the test PC, Windows 11 loads another vendor's signed APO at the same point of the audio chain, but **rejects our DLL because it is not signed**: the microphone can no longer be opened in shared mode. This path therefore remains experimental and needs a DLL with a valid digital signature. Details, installation and rollback (in Italian) in [docs/MICROPHONE.md](docs/MICROPHONE.md).
+The project also contains a path without Voicemeeter: a native APO (`native/`) that adds the file to the physical microphone stream. On the test PC, Windows 11 loads another vendor's signed APO at the same point of the audio chain, but **rejects our DLL because it is not signed**: the microphone can no longer be opened in shared mode. This path therefore remains experimental and needs a DLL with a valid digital signature. The installer script is `scripts/install-microphone.ps1`.
 
 ## Project layout
 
@@ -74,14 +74,12 @@ Soundboard/
   native/       Experimental C++ APO and audio transfer protocol
   scripts/      Build, APO installer, logo generation and GitHub publishing
   assets/       Application logo and screenshot
-  tests/        Audio, import and APO integration tests
   vendor/       Local decoder, licenses and dependency notes
   bin/          Compiled application with runtime dependencies
-  docs/         Technical documentation
   research/     Evidence, tools and resources from the local analysis
 ```
 
-`bin`, the evidence in `research` and the local notes in `docs` are excluded from Git. Sources, scripts, tests, logo, screenshot and dependency notes are versioned.
+`bin` and the evidence in `research` are excluded from Git. Sources, scripts, logo, screenshot and dependency notes are versioned.
 
 ## Build
 
@@ -109,17 +107,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\generate-logo.ps1
 
 Library, settings and decoder cache are stored in `%LOCALAPPDATA%\Soundboard`. This data and personal audio files are not part of the repository. Temporary decoder files are removed on stop, cancellation or error.
 
-## Tests
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\tests\verify-audio.ps1
-powershell -ExecutionPolicy Bypass -File .\tests\verify-import.ps1
-powershell -ExecutionPolicy Bypass -File .\tests\verify-microphone.ps1
-```
-
-The tests cover playback, gain, silence, pause, seek, cancellation, persistence and import. The audio test needs a Realtek output and a Voicemeeter input; the import test generates a sample list and statistics without reading or changing the personal Soundpad library. Temporary data stays inside the project and is removed at the end.
-
-`verify-microphone.ps1` builds the APO DLL and tests it in an isolated COM host with synthetic audio, including the aggregated creation used by the Windows audio engine. It does not open the real microphone, install components or send audio to Discord.
+## Verification
 
 The Voicemeeter path was verified by hand: a tone played by the Soundboard player on `Voicemeeter Input` reaches `Voicemeeter Out B1` at the same level as the file, and in Discord voice, sounds and the other people are all heard.
 
@@ -137,4 +125,8 @@ From a regular Windows PowerShell, with GitHub access through the Git credential
 powershell -ExecutionPolicy Bypass -File .\scripts\publish-github.ps1
 ```
 
-The script creates the local commit, creates a private `Soundboard` repository in the authenticated account and pushes the `main` branch. Use `-RepositoryName Name` to choose the name and add `-Public` for public visibility. It never force-pushes and does not store credentials in project files or in the remote URL.
+The script creates the local commit, creates a public `Soundboard` repository in the authenticated account and pushes the `main` branch. Use `-RepositoryName Name` to choose the name and add `-Private` for a private repository. It never force-pushes and does not store credentials in project files or in the remote URL.
+
+## License
+
+Soundboard is released under the [MIT License](LICENSE). Contributions, issues and pull requests are welcome. FFmpeg remains under its own license (see `vendor/`).
